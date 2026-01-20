@@ -170,6 +170,8 @@ game_state = {
     "level_message_timer": 0.0,
 
     "lava_timer": 0.0,
+    "sun_shoot_timer": 0.0,
+    "sun_shoot_interval": 3.0,  # Shoot every 3 seconds
 }
 
 input_tracker = {
@@ -186,7 +188,7 @@ boss_units = []
 enemy_units = []
 player_projectiles = []
 enemy_projectiles = []
-
+sun_projectiles = []
 enemy_pulse_anim = {"scale": ENEMY_SCALE_MIN, "growing": True}
 
 static_env = {"tree_positions": [], "house_positions": []}
@@ -215,26 +217,26 @@ def is_inside_world_bounds(x, y, pad=0.0):
 
 def world_pos_to_cell(x, y):
     mn = grid_world_min()
-    j = int((x - mn) / TILE_SIZE)
-    i = int((y - mn) / TILE_SIZE)
-    i = int(clamp_float(i, 0, GRID_TILES - 1))
-    j = int(clamp_float(j, 0, GRID_TILES - 1))
+    j = int((x - mn) / TILE_SIZE) # col index 
+    i = int((y - mn) / TILE_SIZE) # row index
+    i = int(clamp_float(i, 0, GRID_TILES - 1)) # clamps i
+    j = int(clamp_float(j, 0, GRID_TILES - 1)) # clamps j 
     return i, j
 
 def get_time_now():
     return time.time()
 
-def normalize_key(k):
+def normalize_key(k): # Converts bytearray → bytes , A becomes a, movements
     if isinstance(k, (bytes, bytearray)):
         return bytes(k).lower()
     return k
 
-def is_key_held(k):
+def is_key_held(k): 
     k = normalize_key(k)
     t = input_tracker["keys_last_time"].get(k, -9999.0)
     return (get_time_now() - t) <= KEY_HOLD_TIMEOUT
 
-def is_special_held(k):
+def is_special_held(k): # camera controls 
     t = input_tracker["special_last_time"].get(k, -9999.0)
     return (get_time_now() - t) <= KEY_HOLD_TIMEOUT
 
@@ -247,7 +249,7 @@ def _debounced_action(k):
     input_tracker["action_last_time"][k] = n
     return True
 
-def heading_to_unit_vector(heading_deg):
+def heading_to_unit_vector(heading_deg): #convert player heading angle into a direction vector.
     r = math.radians(heading_deg)
     return math.sin(-r), math.cos(r)
 
@@ -258,7 +260,7 @@ def normalize_2d(x, y):
     L = vector_length_2d(x, y)
     if L < 1e-6:
         return 0.0, 0.0
-    return x / L, y / L
+    return x / L, y / L #Unit vector with same direction.
 
 def rotate_vector_2d(x, y, deg):
     r = math.radians(deg)
@@ -269,16 +271,16 @@ def build_static_env():
     L, R = grid_world_min(), grid_world_max()
     B, T = grid_world_min(), grid_world_max()
 
-    tree_spacing = 200
+    tree_spacing = 200 # tree making 
     trees = []
 
     for x in range(int(L), int(R), tree_spacing):
-        trees.append((x, B + 50, 0))
-        trees.append((x, T - 50, 0))
+        trees.append((x, B + 50, 0)) # bottom edge 
+        trees.append((x, T - 50, 0)) # top edge
 
     for y in range(int(B), int(T), tree_spacing):
-        trees.append((L + 50, y, 0))
-        trees.append((R - 50, y, 0))
+        trees.append((L + 50, y, 0)) # left edge
+        trees.append((R - 50, y, 0)) # right edge 
 
     static_env["tree_positions"] = trees
     static_env["house_positions"] = [
@@ -322,7 +324,7 @@ def initialize_lava_positions():
     while i < GRID_TILES - 1:
         j = 1
         while j < GRID_TILES - 1:
-            if (i, j) != (ci, cj):
+            if (i, j) != (ci, cj): # skips playerntsarting and bored outside tiles 
                 safe_tiles.append((i, j))
             j += 1
         i += 1
@@ -330,7 +332,7 @@ def initialize_lava_positions():
     if not safe_tiles:
         return
 
-    k = LAVA_COUNT if LAVA_COUNT < len(safe_tiles) else len(safe_tiles)
+    k = LAVA_COUNT if LAVA_COUNT < len(safe_tiles) else len(safe_tiles) # pick 6 lava from 8 tiles check
     lava_tile_cells = random.sample(safe_tiles, k)
 
 def spawn_clouds():
@@ -357,7 +359,7 @@ def update_clouds(dt):
         c["timer"] += dt
         if c["timer"] >= 1.0:
             tile_hazard_map[c["cell"]] = "mud"
-            c["timer"] = 0.0
+            c["timer"] = 0.0 #reset timer so it repeats forever
         idx += 1
 
 def draw_clouds():
@@ -392,7 +394,7 @@ def update_bosses(dt):
         dx = player_state["x"] - b["x"]
         dy = player_state["y"] - b["y"]
         d = math.hypot(dx, dy)
-        if d > 1:
+        if d > 1: # 1 unit far eo will approach 
             b["x"] += (dx / d) * b["speed"] * dt
             b["y"] += (dy / d) * b["speed"] * dt
 
@@ -485,7 +487,7 @@ def update_pickups(dt):
             pickup_items.pop(i)
             continue
 
-        if math.hypot(p["x"] - player_state["x"], p["y"] - player_state["y"]) <= PICKUP_RADIUS:
+        if math.hypot(p["x"] - player_state["x"], p["y"] - player_state["y"]) <= PICKUP_RADIUS: # if within radfius, colects it 
             if p["type"] == "ammo":
                 weapon_state["ammo"] = min(weapon_state["max_ammo"], weapon_state["ammo"] + AMMO_GAIN)
             else:
@@ -554,7 +556,7 @@ def draw_floor_and_walls():
         glVertex3f(x, y + TILE_SIZE, 0.0)
         glEnd()
 
-        t += 1
+        t += 1 # next tile 
 
     L, R = grid_world_min(), grid_world_max()
     B, T = grid_world_min(), grid_world_max()
@@ -637,7 +639,7 @@ def draw_floor_and_walls():
 
         h += 1
 
-def draw_sun():
+def draw_sun(): #top-right corner of arena.
     glColor3f(1.0, 0.9, 0.0)
     glPushMatrix()
     glTranslatef(grid_world_max() - 150, grid_world_max() - 150, 800)
@@ -660,7 +662,7 @@ def draw_sun():
 def start_reload():
     if weapon_state["is_reloading"]:
         return
-    if weapon_state["ammo"] >= weapon_state["max_ammo"]:
+    if weapon_state["ammo"] >= weapon_state["max_ammo"]: #ammo already full, no reload needed.
         return
     weapon_state["is_reloading"] = True
     weapon_state["reload_timer"] = RELOAD_SEC
@@ -684,10 +686,10 @@ def fire_bullet_heading(heading_deg, dmg):
     x = player_state["x"] + dir_x * BULLET_MUZZLE_OFFSET
     y = player_state["y"] + dir_y * BULLET_MUZZLE_OFFSET
 
-    if not is_inside_world_bounds(x, y, pad=12):
+    if not is_inside_world_bounds(x, y, pad=12):#If muzzle position would be outside bounds, spawn at player instead.
         x, y = player_state["x"], player_state["y"]
 
-    spawn_bullet(x, y, dir_x * BULLET_SPEED, dir_y * BULLET_SPEED, dmg)
+    spawn_bullet(x, y, dir_x * BULLET_SPEED, dir_y * BULLET_SPEED, dmg) #Bullet velocity = direction × speed.
 
 def try_fire_weapon():
     if game_state["is_over"]:
@@ -742,7 +744,57 @@ def spawn_enemy_bullet(x, y, dir_x, dir_y):
         "dy": dir_y * ENEMY_BULLET_SPEED,
         "dmg": ENEMY_BULLET_DAMAGE,
     })
+def spawn_sun_projectile():
+    # Sun position
+    sun_x = grid_world_max() - 150
+    sun_y = grid_world_max() - 150
+    sun_z = 800
 
+    # Pick random target tile
+    target_i = random.randint(1, GRID_TILES - 2)
+    target_j = random.randint(1, GRID_TILES - 2)
+
+    # Calculate target position
+    target_x = grid_world_min() + target_j * TILE_SIZE + 50
+    target_y = grid_world_min() + target_i * TILE_SIZE + 50
+    target_z = 0
+
+    # Direction vector
+    dx = target_x - sun_x
+    dy = target_y - sun_y
+    dz = target_z - sun_z
+
+    dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+
+    if dist > 0:
+        speed = 400.0  # Adjust speed as needed
+        dx = (dx / dist) * speed
+        dy = (dy / dist) * speed
+        dz = (dz / dist) * speed
+
+    sun_projectiles.append({
+        "x": sun_x, "y": sun_y, "z": sun_z,
+        "dx": dx, "dy": dy, "dz": dz,
+        "target_cell": (target_i, target_j)
+    })
+
+def update_sun_projectiles(dt):
+    global sun_projectiles
+
+    i = 0
+    while i < len(sun_projectiles):
+        p = sun_projectiles[i]
+        p["x"] += p["dx"] * dt
+        p["y"] += p["dy"] * dt
+        p["z"] += p["dz"] * dt
+
+        # Check if reached ground (z <= 5)
+        if p["z"] <= 5:
+            tile_hazard_map[p["target_cell"]] = "lava"
+            sun_projectiles.pop(i)
+            continue
+
+        i += 1
 def update_enemy_bullets(dt):
     global enemy_projectiles
 
@@ -752,7 +804,7 @@ def update_enemy_bullets(dt):
         b["x"] += b["dx"] * dt
         b["y"] += b["dy"] * dt
 
-        if not is_inside_world_bounds(b["x"], b["y"], pad=0.0):
+        if not is_inside_world_bounds(b["x"], b["y"], pad=0.0):#collision 
             enemy_projectiles.pop(i)
             continue
 
@@ -777,7 +829,13 @@ def draw_enemy_bullets():
         glutSolidCube(ENEMY_BULLET_SIZE)
         glPopMatrix()
 
-
+def draw_sun_projectiles():
+    glColor3f(1.0, 0.0, 0.0)  # Red color
+    for p in sun_projectiles:
+        glPushMatrix()
+        glTranslatef(p["x"], p["y"], p["z"])
+        gluSphere(render_quadric, 12, 12, 12)  # Red sphere
+        glPopMatrix()
 def pick_enemy_type():
     r = random.random()
 
@@ -889,7 +947,7 @@ def shooter_try_fire(e, dt):
     off = random.uniform(-SHOOTER_SPREAD_DEG, SHOOTER_SPREAD_DEG)
     dir_x, dir_y = rotate_vector_2d(dir_x, dir_y, off)
 
-    spawn_enemy_bullet(e["x"], e["y"], dir_x, dir_y)
+    spawn_enemy_bullet(e["x"], e["y"], dir_x, dir_y) # fire bullets 
     e["shoot_cd"] = SHOOTER_FIRE_INTERVAL
 
 def move_enemies(dt):
@@ -1204,7 +1262,7 @@ def apply_hazards(dt):
 def update_invincible(dt):
     if player_state["invincible_timer"] > 0.0:
         player_state["invincible_timer"] = max(0.0, player_state["invincible_timer"] - dt)
-
+#Updates player position and rotation based on movement speed
 def update_player(dt):
     update_dash(dt)
 
@@ -1445,7 +1503,7 @@ def on_key_press(key, x, y):
         if _debounced_action(k):
             reset_game_state()
         return
-
+#this one will not work as we feel useless to do so
     if k in (b"e",):
         if _debounced_action(k):
             player_state["sprint_on"] = not player_state["sprint_on"]
@@ -1525,14 +1583,15 @@ def reset_game_state():
     boss_units.clear()
     enemy_units.clear()
     tile_hazard_map.clear()
-
+    sun_projectiles.clear()
+    game_state["sun_shoot_timer"] = 0.0
     enemy_pulse_anim["scale"] = ENEMY_SCALE_MIN
     enemy_pulse_anim["growing"] = True
 
     build_static_env()
     initialize_lava_positions()
     initialize_level(game_state["level"])
-
+#Main game loop - updates player, bullets, enemies, spawns enemies, checks collisions
 def game_tick():
     global last_tick_time
 
@@ -1557,7 +1616,15 @@ def game_tick():
 
         if boss_units:
             update_bosses(dt)
+        # Sun shooting logic (only on lava levels)
+        cfg = LEVEL_CONFIG[game_state["level"]]
+        if cfg["lava"]:
+            game_state["sun_shoot_timer"] += dt
+            if game_state["sun_shoot_timer"] >= game_state["sun_shoot_interval"]:
+                spawn_sun_projectile()
+                game_state["sun_shoot_timer"] = 0.0
 
+        update_sun_projectiles(dt)
         move_enemies(dt)
         update_enemy_pulse()
 
@@ -1568,7 +1635,7 @@ def game_tick():
         check_enemy_player_hits()
 
     glutPostRedisplay()
-
+# Main rendering function - clears screen, draws floor, player, enemies, bullets, UI
 def render_frame():
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glLoadIdentity()
@@ -1587,6 +1654,7 @@ def render_frame():
     draw_pickups()
     draw_enemy_bullets()
     draw_bullets()
+    draw_sun_projectiles()
     draw_player()
 
     draw_text(15, 770, "3D ARENA SURVIVAL SHOOTER GAME")
@@ -1663,3 +1731,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
